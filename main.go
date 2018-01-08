@@ -15,13 +15,6 @@ import (
 	"github.com/jasonsoft/napnap"
 )
 
-type windowSize struct {
-	Rows uint16 `json:"rows"`
-	Cols uint16 `json:"cols"`
-	X    uint16
-	Y    uint16
-}
-
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -32,6 +25,7 @@ var upgrader = websocket.Upgrader{
 
 func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 
+	//upgrade http to websocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print(err)
@@ -44,12 +38,14 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//get cmd variable
 	cmd := r.FormValue("cmd")
+	//reduce multi spaces into one space
 	regexMultiSpace := regexp.MustCompile(`[\s\p{Zs}]{2,}`)
 	cmd = strings.TrimSpace(cmd)
 	cmd = regexMultiSpace.ReplaceAllString(cmd, " ")
+	//split string to array by space
 	cmdArray := strings.Split(cmd, " ")
-	log.Print(cmdArray)
 	ctx := context.Background()
 	execConfig := types.ExecConfig{
 		AttachStderr: true,
@@ -60,17 +56,16 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 		Detach:       false,
 	}
 
+	//set target container
 	exec, err := cli.ContainerExecCreate(ctx, "a2e914945c4c", execConfig)
 	if err != nil {
 		log.Print(err)
 		return
 	}
-
 	execAttachConfig := types.ExecStartCheck{
 		Detach: false,
 		Tty:    true,
 	}
-
 	containerConn, err := cli.ContainerExecAttach(ctx, exec.ID, execAttachConfig)
 	if err != nil {
 		log.Print(err)
@@ -79,6 +74,7 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		for {
+			//docker reader and websocket writer
 			buf := make([]byte, 4096)
 			_, err = containerConn.Reader.Read(buf)
 			if err != nil {
@@ -96,6 +92,7 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for {
+		//docker writer and websocket reader
 		_, reader, err := conn.NextReader()
 		if err != nil {
 			log.Print(err)

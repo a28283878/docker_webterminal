@@ -13,7 +13,7 @@
         
         var websocket
         function ab2str(buf) {
-          return String.fromCharCode.apply(null, new Uint8Array(buf));
+            return new TextDecoder().decode(buf);
         }  
     </script>
     <form id="command-submit" onsubmit="event.preventDefault(); cmdFunction();">
