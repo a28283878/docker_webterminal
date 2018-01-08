@@ -48,7 +48,7 @@
 
                 websocket.onclose = function(evt) {
                     term.off('data', sendWebsocketData);
-                    term.write("\nSession terminated");
+                    term.write("\r\nSession terminated");
                     term.write("\r\n");
                 }
 
