@@ -6,11 +6,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/jasonsoft/napnap"
 )
 
 type windowSize struct {
@@ -32,27 +34,36 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Panic(err)
+		log.Print(err)
+		return
 	}
 
-	cli, err := client.NewEnvClient()
+	cli, err := client.NewClient("tcp://10.200.252.123:2376", "v1.30", nil, nil)
 	if err != nil {
-		log.Panic(err)
+		log.Print(err)
+		return
 	}
 
+	cmd := r.FormValue("cmd")
+	regexMultiSpace := regexp.MustCompile(`[\s\p{Zs}]{2,}`)
+	cmd = strings.TrimSpace(cmd)
+	cmd = regexMultiSpace.ReplaceAllString(cmd, " ")
+	cmdArray := strings.Split(cmd, " ")
+	log.Print(cmdArray)
 	ctx := context.Background()
 	execConfig := types.ExecConfig{
 		AttachStderr: true,
 		AttachStdin:  true,
 		AttachStdout: true,
-		Cmd:          []string{"/bin/sh"},
+		Cmd:          cmdArray,
 		Tty:          true,
 		Detach:       false,
 	}
 
-	exec, err := cli.ContainerExecCreate(ctx, "159c0c12f6bb", execConfig)
+	exec, err := cli.ContainerExecCreate(ctx, "a2e914945c4c", execConfig)
 	if err != nil {
-		log.Panic(err)
+		log.Print(err)
+		return
 	}
 
 	execAttachConfig := types.ExecStartCheck{
@@ -62,19 +73,8 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 
 	containerConn, err := cli.ContainerExecAttach(ctx, exec.ID, execAttachConfig)
 	if err != nil {
-		log.Panic(err)
-	}
-
-	buf := make([]byte, 1024)
-	_, err = containerConn.Conn.Read(buf)
-	if err != nil {
-		if err.Error() != "EOF" {
-			log.Panic(err)
-		}
-	}
-	err = conn.WriteMessage(websocket.BinaryMessage, buf)
-	if err != nil {
-		log.Panic(err)
+		log.Print(err)
+		return
 	}
 
 	go func() {
@@ -82,11 +82,15 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 			buf := make([]byte, 4096)
 			_, err = containerConn.Reader.Read(buf)
 			if err != nil {
-				log.Panic(err)
+				log.Print(err)
+				conn.Close()
+				return
 			}
 			err = conn.WriteMessage(websocket.BinaryMessage, buf)
 			if err != nil {
-				log.Panic(err)
+				log.Print(err)
+				conn.Close()
+				return
 			}
 		}
 	}()
@@ -94,21 +98,26 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, reader, err := conn.NextReader()
 		if err != nil {
-			log.Panic(err)
+			log.Print(err)
+			containerConn.Close()
+			return
 		}
 		_, err = io.Copy(containerConn.Conn, reader)
 		if err != nil {
-			log.Panic(err)
+			log.Print(err)
+			containerConn.Close()
+			return
 		}
 	}
 }
 
 func main() {
 	var listen = flag.String("listen", ":8000", "Host:port to listen on")
-
+	nap := napnap.New()
 	flag.Parse()
-	r := mux.NewRouter()
-
-	r.HandleFunc("/term", handleWebsocket)
-	log.Fatal(http.ListenAndServe(*listen, r))
+	router := napnap.NewRouter()
+	router.Get("/term", napnap.WrapHandler(http.HandlerFunc(handleWebsocket)))
+	nap.Use(router)
+	httpengine := napnap.NewHttpEngine(*listen)
+	log.Fatal(nap.Run(httpengine))
 }
