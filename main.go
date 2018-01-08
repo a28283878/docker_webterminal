@@ -31,10 +31,12 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
+	defer conn.Close()
 
 	cli, err := client.NewClient("tcp://10.200.252.123:2376", "v1.30", nil, nil)
 	if err != nil {
 		log.Print(err)
+		conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 		return
 	}
 
@@ -60,6 +62,7 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	exec, err := cli.ContainerExecCreate(ctx, "a2e914945c4c", execConfig)
 	if err != nil {
 		log.Print(err)
+		conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 		return
 	}
 	execAttachConfig := types.ExecStartCheck{
@@ -69,23 +72,29 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	containerConn, err := cli.ContainerExecAttach(ctx, exec.ID, execAttachConfig)
 	if err != nil {
 		log.Print(err)
+		conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 		return
 	}
+	defer containerConn.Close()
 
 	go func() {
+		defer func() {
+			containerConn.Close()
+			conn.Close()
+		}()
 		for {
 			//docker reader and websocket writer
 			buf := make([]byte, 4096)
 			_, err = containerConn.Reader.Read(buf)
 			if err != nil {
 				log.Print(err)
-				conn.Close()
+				conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 				return
 			}
 			err = conn.WriteMessage(websocket.BinaryMessage, buf)
 			if err != nil {
 				log.Print(err)
-				conn.Close()
+				conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 				return
 			}
 		}
@@ -96,13 +105,13 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 		_, reader, err := conn.NextReader()
 		if err != nil {
 			log.Print(err)
-			containerConn.Close()
+			conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 			return
 		}
 		_, err = io.Copy(containerConn.Conn, reader)
 		if err != nil {
 			log.Print(err)
-			containerConn.Close()
+			conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 			return
 		}
 	}
