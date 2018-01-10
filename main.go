@@ -59,7 +59,7 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//set target container
-	exec, err := cli.ContainerExecCreate(ctx, "a2e914945c4c", execConfig)
+	exec, err := cli.ContainerExecCreate(ctx, "470cb40670f1", execConfig)
 	if err != nil {
 		log.Print(err)
 		conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
@@ -108,7 +108,8 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 			conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
 			return
 		}
-		_, err = io.Copy(containerConn.Conn, reader)
+		n, err := io.Copy(containerConn.Conn, reader)
+		println(n)
 		if err != nil {
 			log.Print(err)
 			conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
